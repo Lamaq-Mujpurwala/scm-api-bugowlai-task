@@ -1,0 +1,37 @@
+# FastAPI framework and server
+fastapi
+uvicorn[standard]
+
+# Database ORM and driver
+sqlalchemy
+psycopg2-binary
+
+# For database migrations
+alembic
+pydantic_settings
+
+# Configuration management
+python-dotenv
+
+# For handling image uploads
+python-multipart
+
+# HTTP client for third-party APIs (OpenAI, Slack, etc.)
+httpx
+
+# Official SDKs for easier integration
+langchain-groq
+slack_sdk
+
+# Google Gemini SDK
+google-genai>=0.3.0
+
+# Asynchronous Task Queue (Celery) - Optional
+celery
+redis
+
+# For image processing (optional)
+Pillow
+
+# For better JSON handling
+orjson
