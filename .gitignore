@@ -32,3 +32,5 @@ share/python-wheels/
 *.egg
 # alembic
 .script.py.mako
+
+deployment/scm-api-service-lamaq/
