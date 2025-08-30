@@ -8,6 +8,7 @@ from app.backend.database.session import engine
 
 # Import API router
 from app.backend.api.v1.router import api_router
+from app.backend.api.v2.router import api_router_v2
 
 # Create FastAPI app
 app = FastAPI(
@@ -35,6 +36,7 @@ if USE_SQLITE:
 
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router_v2, prefix="/api/v2")
 
 @app.get("/")
 async def root():
