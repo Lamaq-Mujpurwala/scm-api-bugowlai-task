@@ -2,6 +2,15 @@
 
 A FastAPI-based content moderation service that uses LLMs (OpenAI GPT-4 and Google Gemini) to analyze text and images for inappropriate content, with automatic notifications via Slack and email.
 
+Versions overview
+- v1 (local-first): PostgreSQL via docker-compose; endpoints under /api/v1.
+- v2 (deployment-focused): Hugging Face Spaces (Docker) with SQLite; endpoints under /api/v2. Same features, deployment-optimized defaults.
+
+Links to fill in
+- v1 tag/branch: <N/A>
+- v2 tag/branch: <N/A>
+- Live Endpoint URL: <https://lamaq-scm-api-service-lamaq.hf.space/docs>
+
 ## 🏗️ Architecture
 
 The backend is structured into three main components:
@@ -10,7 +19,7 @@ The backend is structured into three main components:
 2. **API Endpoints** - FastAPI routes with proper request/response schemas
 3. **LLM Services** - OpenAI and Gemini integration for content analysis
 
-### Directory Structure
+### Directory Structure (key parts)
 
 ```
 app/backend/
@@ -19,7 +28,9 @@ app/backend/
 │       ├── endpoints/
 │       │   ├── moderation.py    # Text/Image moderation endpoints
 │       │   └── analytics.py     # Analytics endpoints
-│       └── router.py            # Main API router
+│       └── router.py            # v1 API router
+│   └── v2/
+│       └── router.py            # v2 router (re-exports v1 endpoints)
 ├── database/
 │   ├── base.py                  # SQLAlchemy Base
 │   └── session.py               # Database session management
@@ -34,7 +45,19 @@ app/backend/
 │   ├── moderation_service.py    # Main business logic
 │   └── analytics_service.py     # Analytics and reporting
 └── core/
-    └── config.py                # Configuration management
+   └── config.py                # Configuration management
+
+app/
+├── main.py                      # FastAPI app entrypoint (mounts /api/v1 and /api/v2)
+└── deployment/                  # v2 deployment bundle (repo-scoped)
+   ├── Dockerfile               # Build for Spaces (uses app/ code)
+   ├── docker-compose.hf.yml    # Local test of deployment image
+   ├── .env.example             # Example env vars for v2
+   └── alembic/
+      ├── env.py               # Alembic env (imports app.backend.*)
+      ├── versions/
+      │   └── 95e1a31eab38_initial_migration_with_models.py
+      └── ../alembic.ini       # Alembic configuration (repo-scoped for v2)
 ```
 
 ## 🚀 Quick Start
@@ -46,7 +69,7 @@ app/backend/
 - API keys for LLM providers (OpenAI and/or Gemini)
 - Notification service credentials (Slack webhook, BrevoMail API)
 
-### Local Development Setup
+### Local Development Setup (v1)
 
 1. **Clone the repository**:
    ```bash
@@ -103,7 +126,7 @@ app/backend/
    - **Interactive Docs**: http://localhost:8000/docs
    - **Health Check**: http://localhost:8000/health
 
-### Local Development Workflow
+### Local Development Workflow (v1)
 
 1. **Start development environment**:
    ```bash
@@ -226,7 +249,7 @@ curl "http://localhost:8000/api/v1/analytics/summary?user=test@example.com"
 4. Fill in the required parameters
 5. Click "Execute"
 
-## 🌐 Hugging Face Spaces Deployment
+## 🌐 Hugging Face Spaces Deployment (v2)
 
 ### Prerequisites
 - Hugging Face account
@@ -241,20 +264,21 @@ curl "http://localhost:8000/api/v1/analytics/summary?user=test@example.com"
    - Choose "Docker" as the SDK
    - Set Space name and visibility
 
-2. **Upload required files**:
+2. **Upload required files** (from `app/deployment` or the v2 tag):
    ```
-   Dockerfile                    # Production Dockerfile
-   docker-compose.hf.yml         # HF Spaces compose file
-   app/                          # Application code
-   requirements.txt              # Python dependencies
-   alembic/                      # Database migrations
-   alembic.ini                   # Alembic configuration
+   Dockerfile                      # Production Dockerfile (repo-scoped)
+   docker-compose.hf.yml           # Optional local check of deployment image
+   app/                            # Application code
+   requirements.txt                # Python dependencies
+   alembic/                        # Database migrations (copy from app/deployment/alembic)
+   alembic.ini                     # Alembic configuration (copy from app/deployment/alembic.ini)
    ```
 
 3. **Configure environment variables** in HF Spaces settings:
    ```bash
-   USE_SQLITE=true
-   DATABASE_URL=sqlite:///./scm_api.db
+   # Database (SQLite on Spaces)
+   DATABASE_URL=sqlite:////data/scm_api.db
+   SKIP_MIGRATIONS=true
    OPENAI_API_KEY=your_openai_api_key
    GEMINI_API_KEY=your_gemini_api_key
    SLACK_WEBHOOK_URL=your_slack_webhook
@@ -270,6 +294,17 @@ curl "http://localhost:8000/api/v1/analytics/summary?user=test@example.com"
    - **API Base URL**: `https://your-space-name.hf.space`
    - **Interactive Docs**: `https://your-space-name.hf.space/docs`
    - **Health Check**: `https://your-space-name.hf.space/health`
+   - Note: Spaces expects apps to listen on `$PORT` (typically 7860). The deployment Dockerfile uses `${PORT:-7860}`.
+
+6. **v1 vs v2 behavior**
+   - v1 uses Postgres + Alembic migrations (run via compose task/CLI).
+   - v2 uses SQLite for portability on Spaces, with a startup fallback to create_all (when SKIP_MIGRATIONS=true). Data is ephemeral across rebuilds.
+
+7. **Endpoints (v2)**
+    - Same as v1 but mounted under `/api/v2`:
+       - `POST /api/v2/moderate/text`
+       - `POST /api/v2/moderate/image`
+       - `GET /api/v2/analytics/summary?user=test@example.com`
 
 ### Testing Deployed API
 
@@ -299,8 +334,9 @@ curl "http://localhost:8000/api/v1/analytics/summary?user=test@example.com"
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `DATABASE_URL` | Database connection string | Yes | `postgresql://moderator:moderator@db:5432/moderator` |
-| `USE_SQLITE` | Use SQLite instead of PostgreSQL | No | `false` |
+| `DATABASE_URL` | Database connection string | Yes | v1: `postgresql://moderator:moderator@db:5432/moderator` · v2: `sqlite:////data/scm_api.db` |
+| `SKIP_MIGRATIONS` | Skip Alembic and use SQLAlchemy create_all at startup (v2) | No | `false` |
+| `USE_SQLITE` | Local flag to enable SQLite create_all in v1 app | No | `false` |
 | `OPENAI_API_KEY` | OpenAI API key for GPT-4 | No* | - |
 | `GEMINI_API_KEY` | Google Gemini API key | No* | - |
 | `SLACK_WEBHOOK_URL` | Slack webhook URL | No | - |
@@ -377,15 +413,15 @@ curl "http://localhost:8000/api/v1/analytics/summary?user=test@example.com"
 - Includes entrypoint script for migrations
 - Runs with `--reload` flag
 
-### Production (`Dockerfile`)
-- Optimized for Hugging Face Spaces
-- No volume mounts
-- Direct uvicorn startup
+### Production (`app/deployment/Dockerfile`)
+- Optimized for Spaces (uses repo layout)
+- Non-root user and correct PORT binding
+- Copies `app/deployment/alembic*` into image
 
 ### Docker Compose Files
 
 - `docker-compose.yml` - Local development with PostgreSQL
-- `docker-compose.hf.yml` - Hugging Face Spaces with SQLite
+- `docker-compose.hf.yml` - Hugging Face Spaces style local test with SQLite (optional)
 
 ## 📊 Features
 
